@@ -1,6 +1,7 @@
 package distributedCache
 
 import (
+	"distributedCache"
 	"fmt"
 	"log"
 	"sync"
@@ -11,7 +12,7 @@ type Group struct {
 	name      string
 	getter    Getter
 	mainCache cache
-	peers     PeerPicker
+	peers     distributedCache.PeerPicker
 }
 
 // A Getter loads data for a key.
@@ -72,7 +73,7 @@ func (g *Group) Get(key string) (ByteView, error) {
 }
 
 // RegisterPeers registers a PeerPicker for choosing remote peer
-func (g *Group) RegisterPeers(peers PeerPicker) {
+func (g *Group) RegisterPeers(peers distributedCache.PeerPicker) {
 	if g.peers != nil {
 		panic("RegisterPeerPicker called more than once")
 	}
@@ -107,7 +108,7 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 	return value, nil
 }
 
-func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+func (g *Group) getFromPeer(peer distributedCache.PeerGetter, key string) (ByteView, error) {
 	bytes, err := peer.Get(g.name, key)
 	if err != nil {
 		return ByteView{}, err
