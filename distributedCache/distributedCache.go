@@ -6,7 +6,8 @@ import (
 	"sync"
 )
 
-// A Group is a cache namespace and associated data loaded spread over
+// getter: Get from DB, define from main.go
+// peers: HTTPPool struct, from http.go
 type Group struct {
 	name      string
 	getter    Getter
@@ -14,15 +15,12 @@ type Group struct {
 	peers     PeerPicker
 }
 
-// A Getter loads data for a key.
 type Getter interface {
 	Get(key string) ([]byte, error)
 }
 
-// A GetterFunc implements Getter with a function.
 type GetterFunc func(key string) ([]byte, error)
 
-// Get implements Getter interface function
 func (f GetterFunc) Get(key string) ([]byte, error) {
 	return f(key)
 }
@@ -32,7 +30,7 @@ var (
 	groups = make(map[string]*Group)
 )
 
-// NewGroup create a new instance of Group
+// add group to groups
 func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	if getter == nil {
 		panic("nil Getter")
@@ -48,8 +46,6 @@ func NewGroup(name string, cacheBytes int64, getter Getter) *Group {
 	return g
 }
 
-// GetGroup returns the named group previously created with NewGroup, or
-// nil if there's no such group.
 func GetGroup(name string) *Group {
 	mu.RLock()
 	g := groups[name]
@@ -57,7 +53,7 @@ func GetGroup(name string) *Group {
 	return g
 }
 
-// Get value for a key from cache
+// Important! get from maincache or peer or DB
 func (g *Group) Get(key string) (ByteView, error) {
 	if key == "" {
 		return ByteView{}, fmt.Errorf("key is required")
@@ -71,14 +67,9 @@ func (g *Group) Get(key string) (ByteView, error) {
 	return g.load(key)
 }
 
-// RegisterPeers registers a PeerPicker for choosing remote peer
-func (g *Group) RegisterPeers(peers PeerPicker) {
-	if g.peers != nil {
-		panic("RegisterPeerPicker called more than once")
-	}
-	g.peers = peers
-}
-
+// pickpeer is the method in HTTPPool, which uses consistent hashing to get peer address from a key
+// getFromPeer request to that specific peer node
+// getLocally get from DB
 func (g *Group) load(key string) (value ByteView, err error) {
 	if g.peers != nil {
 		if peer, ok := g.peers.PickPeer(key); ok {
@@ -92,10 +83,16 @@ func (g *Group) load(key string) (value ByteView, err error) {
 	return g.getLocally(key)
 }
 
-func (g *Group) populateCache(key string, value ByteView) {
-	g.mainCache.add(key, value)
+// get from peer
+func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
+	bytes, err := peer.Get(g.name, key)
+	if err != nil {
+		return ByteView{}, err
+	}
+	return ByteView{b: bytes}, nil
 }
 
+// get from DB and save to maincache
 func (g *Group) getLocally(key string) (ByteView, error) {
 	bytes, err := g.getter.Get(key)
 	if err != nil {
@@ -107,10 +104,14 @@ func (g *Group) getLocally(key string) (ByteView, error) {
 	return value, nil
 }
 
-func (g *Group) getFromPeer(peer PeerGetter, key string) (ByteView, error) {
-	bytes, err := peer.Get(g.name, key)
-	if err != nil {
-		return ByteView{}, err
+func (g *Group) populateCache(key string, value ByteView) {
+	g.mainCache.add(key, value)
+}
+
+// set in main.go
+func (g *Group) RegisterPeers(peers PeerPicker) {
+	if g.peers != nil {
+		panic("RegisterPeerPicker called more than once")
 	}
-	return ByteView{b: bytes}, nil
+	g.peers = peers
 }

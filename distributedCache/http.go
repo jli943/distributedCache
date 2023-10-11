@@ -12,21 +12,21 @@ import (
 )
 
 const (
-	defaultBasePath = "/_geecache/"
+	defaultBasePath = "/_distributedcache/"
 	defaultReplicas = 50
 )
 
-// HTTPPool implements PeerPicker for a pool of HTTP peers.
+// self : IP address and port
+// peers : peers address, easy to use consistenhash to get peer address depend on provided key
+// httpGetters: a map of peers address, easy to send GET Request to them
 type HTTPPool struct {
-	// this peer's base URL, e.g. "https://example.net:8000"
 	self        string
 	basePath    string
-	mu          sync.Mutex // guards peers and httpGetters
+	mu          sync.Mutex
 	peers       *consistenthash.Map
-	httpGetters map[string]*httpGetter // keyed by e.g. "http://10.0.0.2:8008"
+	httpGetters map[string]*httpGetter
 }
 
-// NewHTTPPool initializes an HTTP pool of peers.
 func NewHTTPPool(self string) *HTTPPool {
 	return &HTTPPool{
 		self:     self,
@@ -34,18 +34,17 @@ func NewHTTPPool(self string) *HTTPPool {
 	}
 }
 
-// Log info with server name
 func (p *HTTPPool) Log(format string, v ...interface{}) {
 	log.Printf("[Server %s] %s", p.self, fmt.Sprintf(format, v...))
 }
 
-// ServeHTTP handle all http requests
+// Important! ServerSide
+// group.Get(key) uses Group to get key, the logic is in distributedCache.go, it will look mainCache or peer or DB to get final info.
 func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if !strings.HasPrefix(r.URL.Path, p.basePath) {
 		panic("HTTPPool serving unexpected path: " + r.URL.Path)
 	}
 	p.Log("%s %s", r.Method, r.URL.Path)
-	// /<basepath>/<groupname>/<key> required
 	parts := strings.SplitN(r.URL.Path[len(p.basePath):], "/", 2)
 	if len(parts) != 2 {
 		http.Error(w, "bad request", http.StatusBadRequest)
@@ -71,7 +70,7 @@ func (p *HTTPPool) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Write(view.ByteSlice())
 }
 
-// Set updates the pool's list of peers.
+// Set peers in p.peers(consistentHash) and p.httpGetter(client which contains all peers info, easy to send GET Request)
 func (p *HTTPPool) Set(peers ...string) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -83,7 +82,7 @@ func (p *HTTPPool) Set(peers ...string) {
 	}
 }
 
-// PickPeer picks a peer according to key
+// Used by Group struct.
 func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -96,6 +95,7 @@ func (p *HTTPPool) PickPeer(key string) (PeerGetter, bool) {
 
 var _ PeerPicker = (*HTTPPool)(nil)
 
+// Client side
 type httpGetter struct {
 	baseURL string
 }

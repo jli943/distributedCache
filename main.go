@@ -1,13 +1,5 @@
 package main
 
-/*
-$ curl "http://localhost:9999/api?key=Tom"
-630
-
-$ curl "http://localhost:9999/api?key=kkk"
-kkk not exist
-*/
-
 import (
 	"distributedCache"
 	"flag"
@@ -41,6 +33,7 @@ func startCacheServer(addr string, addrs []string, gee *distributedCache.Group) 
 	log.Fatal(http.ListenAndServe(addr[7:], peers))
 }
 
+// APUServer and CacheServer use the same Group
 func startAPIServer(apiAddr string, gee *distributedCache.Group) {
 	http.Handle("/api", http.HandlerFunc(
 		func(w http.ResponseWriter, r *http.Request) {
